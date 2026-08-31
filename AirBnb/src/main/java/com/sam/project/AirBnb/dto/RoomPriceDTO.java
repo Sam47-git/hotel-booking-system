@@ -3,13 +3,13 @@ package com.sam.project.AirBnb.dto;
 import com.sam.project.AirBnb.entities.Room;
 import lombok.AllArgsConstructor;
 import lombok.Data;
-
-import java.util.List;
+import lombok.NoArgsConstructor;
 
 @Data
 @AllArgsConstructor
-public class HotelInfoDTO {
+@NoArgsConstructor
+public class RoomPriceDTO {
 
-    private HotelDTO hotel;
-    private List<RoomPriceResponseDTO> rooms;
+    private Room room;
+    private Double price;
 }

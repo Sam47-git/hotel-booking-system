@@ -1,6 +1,5 @@
 package com.sam.project.AirBnb.dto;
 
-import com.sam.project.AirBnb.entities.*;
 import com.sam.project.AirBnb.entities.enums.BookingStatus;
 import lombok.Data;
 

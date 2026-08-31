@@ -9,6 +9,7 @@ import org.hibernate.annotations.UpdateTimestamp;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.HashSet;
 import java.util.Set;
 
 @Entity
@@ -54,13 +55,13 @@ public class Booking {
     @Column(nullable = false)
     private BookingStatus bookingStatus;
 
-    @ManyToMany(fetch = FetchType.LAZY)
-    @JoinTable(
-            name = "booking_guest",
-            joinColumns = @JoinColumn(name = "booing_id"),
-            inverseJoinColumns = @JoinColumn(name = "guest_id")
+    @OneToMany(
+            mappedBy = "booking",
+            cascade = CascadeType.ALL,
+            orphanRemoval = true,
+            fetch = FetchType.LAZY
     )
-    private Set<Guest> guests;
+    private Set<BookingGuest> bookingGuests = new HashSet<>();
 
     @Column(nullable = false, precision = 10, scale = 2)
     private BigDecimal amount;

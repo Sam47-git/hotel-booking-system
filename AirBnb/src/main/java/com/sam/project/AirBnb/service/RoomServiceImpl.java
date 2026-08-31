@@ -11,6 +11,7 @@ import com.sam.project.AirBnb.repository.RoomRepository;
 import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.jspecify.annotations.Nullable;
 import org.modelmapper.ModelMapper;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
@@ -18,6 +19,8 @@ import org.springframework.stereotype.Service;
 import java.util.List;
 import java.util.Objects;
 import java.util.stream.Collectors;
+
+import static com.sam.project.AirBnb.util.AppUtils.getCurrentUser;
 
 @Service
 @Slf4j
@@ -36,7 +39,7 @@ public class RoomServiceImpl implements RoomService {
                 .findById(hotelId)
                 .orElseThrow(() -> new ResourceNotFoundException("Hotel not found with id: "+ hotelId));
 
-        User user = (User) Objects.requireNonNull(SecurityContextHolder.getContext().getAuthentication()).getPrincipal();
+        User user = getCurrentUser();
         if (!user.getId().equals(hotel.getOwner().getId())) {
             throw new UnAuthorisedException("This user does not own this hotel with id: "+hotelId);
         }
@@ -59,7 +62,7 @@ public class RoomServiceImpl implements RoomService {
                 .findById(hotelId)
                 .orElseThrow(() -> new ResourceNotFoundException("Hotel not found with id: "+ hotelId));
 
-        User user = (User) Objects.requireNonNull(SecurityContextHolder.getContext().getAuthentication()).getPrincipal();
+        User user = getCurrentUser();
         if (!user.getId().equals(hotel.getOwner().getId())) {
             throw new UnAuthorisedException("This user does not own this hotel with id: "+hotelId);
         }
@@ -87,12 +90,36 @@ public class RoomServiceImpl implements RoomService {
                 .findById(roomId)
                 .orElseThrow(() -> new ResourceNotFoundException("Room not found with id: "+ roomId));
 
-        User user = (User) Objects.requireNonNull(SecurityContextHolder.getContext().getAuthentication()).getPrincipal();
+        User user = getCurrentUser();
         if (!user.getId().equals(room.getHotel().getOwner().getId())) {
             throw new UnAuthorisedException("This user does not own this room with id: "+roomId);
         }
 
         inventoryService.deleteAllInventories(room);
         roomRepository.deleteById(roomId);
+    }
+
+    @Override
+    @Transactional
+    public RoomDTO updateRoomById(Long hotelId, Long roomId, RoomDTO roomDto) {
+        log.info("Updating the room with ID: {}", roomId);
+        Hotel hotel = hotelRepository
+                .findById(hotelId)
+                .orElseThrow(() -> new ResourceNotFoundException("Hotel not found with ID: "+hotelId));
+
+        User user = getCurrentUser();
+        if(!user.getId().equals(hotel.getOwner().getId())) {
+            throw new UnAuthorisedException("This user does not own this hotel with id: "+hotelId);
+        }
+
+        Room room = roomRepository.findById(roomId)
+                .orElseThrow(() -> new ResourceNotFoundException("Room not found with ID: "+roomId));
+
+        modelMapper.map(roomDto, room);
+        room.setId(roomId);
+
+        room = roomRepository.save(room);
+
+        return modelMapper.map(room, RoomDTO.class);
     }
 }

@@ -3,6 +3,7 @@ package com.sam.project.AirBnb.service;
 import com.sam.project.AirBnb.dto.BookingDTO;
 import com.sam.project.AirBnb.dto.BookingRequest;
 import com.sam.project.AirBnb.dto.GuestDTO;
+import com.sam.project.AirBnb.dto.HotelReportDTO;
 import com.sam.project.AirBnb.entities.*;
 import com.sam.project.AirBnb.entities.enums.BookingStatus;
 import com.sam.project.AirBnb.exception.ResourceNotFoundException;
@@ -20,13 +21,19 @@ import lombok.extern.slf4j.Slf4j;
 import org.jspecify.annotations.Nullable;
 import org.modelmapper.ModelMapper;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
+import java.util.stream.Collectors;
+
+import static com.sam.project.AirBnb.util.AppUtils.getCurrentUser;
 
 @Service
 @Slf4j
@@ -110,11 +117,23 @@ public class BookingServiceImpl implements BookingService {
             throw new IllegalStateException("Booking is not under reserved state, cannot add guests");
         }
 
-        for (GuestDTO guestDTO: guestDTOList) {
+        for (GuestDTO guestDTO : guestDTOList) {
+            // Create current Guest
             Guest guest = modelMapper.map(guestDTO, Guest.class);
             guest.setUser(user);
+
             guest = guestRepository.save(guest);
-            booking.getGuests().add(guest);
+
+            // Create historical BookingGuest snapshot
+            BookingGuest bookingGuest = BookingGuest.builder()
+                    .booking(booking)
+                    .guest(guest)
+                    .name(guest.getName())
+                    .age(guest.getAge())
+                    .gender(guest.getGender())
+                    .build();
+
+            booking.getBookingGuests().add(bookingGuest);
         }
 
         booking.setBookingStatus(BookingStatus.GUESTS_ADDED);
@@ -214,23 +233,81 @@ public class BookingServiceImpl implements BookingService {
     }
 
     @Override
-    public String getBookingStatus(Long bookingId) {
+    public BookingStatus getBookingStatus(Long bookingId) {
         Booking booking = bookingRepository.findById(bookingId).orElseThrow(
                 () -> new ResourceNotFoundException("Booking not found with id: "+bookingId)
         );
         User user = getCurrentUser();
-        if (!user.equals(booking.getUser())) {
+        if (!user.getId().equals(booking.getUser().getId())) {
             throw new UnAuthorisedException("Booking does not belong to this user with id: "+user.getId());
         }
-        return booking.getBookingStatus().name();
+        return booking.getBookingStatus();
     }
 
+    @Override
+    public List<BookingDTO> getAllBookingsByHotelId(Long hotelId) {
+        Hotel hotel = hotelRepository
+                .findById(hotelId)
+                .orElseThrow(() -> new ResourceNotFoundException("Hotel not found with id: "+ hotelId));
+
+        User user = getCurrentUser();
+        log.info("Getting all bookings for the hotel wth id: "+hotelId);
+
+        if (!user.getId().equals(hotel.getOwner().getId()))
+            throw new AccessDeniedException("You are not the owner of hotel with id: "+hotelId);
+
+        List<Booking> bookings = bookingRepository.findByHotel(hotel);
+
+        return bookings.stream()
+                .map((element) -> modelMapper.map(element, BookingDTO.class))
+                .collect(Collectors.toList());
+    }
+
+    @Override
+    public HotelReportDTO getHotelReport(Long hotelId, LocalDate startDate, LocalDate endDate) {
+        Hotel hotel = hotelRepository
+                .findById(hotelId)
+                .orElseThrow(() -> new ResourceNotFoundException("Hotel not found with id: "+ hotelId));
+
+        User user = getCurrentUser();
+        log.info("Generating report for hotel wth id: "+hotelId);
+
+        if (!user.getId().equals(hotel.getOwner().getId()))
+            throw new AccessDeniedException("You are not the owner of hotel with id: "+hotelId);
+
+        LocalDateTime startDateTime = startDate.atStartOfDay();
+        LocalDateTime endDateTime = endDate.atTime(LocalTime.MAX);
+
+        List<Booking> bookings = bookingRepository.findByHotelAndCreatedAtBetween(hotel, startDateTime, endDateTime);
+
+        Long totalConfirmedBookings = bookings
+                .stream()
+                .filter(booking -> booking.getBookingStatus() == BookingStatus.CONFIRMED)
+                .count();
+
+        BigDecimal totalRevenueOfConfirmedBookings = bookings.stream()
+                .filter(booking -> booking.getBookingStatus() == BookingStatus.CONFIRMED)
+                .map(Booking::getAmount)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+        BigDecimal avgRevenue = totalConfirmedBookings == 0 ? BigDecimal.ZERO :
+                totalRevenueOfConfirmedBookings.divide(BigDecimal.valueOf(totalConfirmedBookings), RoundingMode.HALF_UP);
+
+        return new HotelReportDTO(totalConfirmedBookings, totalRevenueOfConfirmedBookings, avgRevenue);
+    }
+
+    @Override
+    public List<BookingDTO> getMyBookings() {
+        User user = getCurrentUser();
+
+        return bookingRepository.findByUser(user)
+                .stream()
+                .map((element) -> modelMapper.map(element, BookingDTO.class))
+                .collect(Collectors.toList());
+    }
 
     public boolean hasBookingExpired(Booking booking) {
         return booking.getCreatedAt().plusMinutes(10).isBefore(LocalDateTime.now());
     }
 
-    public User getCurrentUser() {
-        return (User) SecurityContextHolder.getContext().getAuthentication().getPrincipal();
-    }
 }
